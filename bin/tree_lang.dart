@@ -1,10 +1,16 @@
 void main() {
-  var toks = extractToks("A(1 2 3) B(2 4 5) | A B");
-  print(toks);
+  var toks = extractToks('''
+A(0 0)
+B(1 0)
+C(0 1)
+D(1 1)
+E(0 -1)
+
+| A [E] B C D 
+''');
 
   try {
     var nodes = parseToks(toks);
-    print(nodes);
   } catch (err) {
     print(err);
   }
@@ -28,75 +34,69 @@ extension Into on TokType {
   Tok into({String? sym, int? val}) {
     return Tok(this, symbol: sym, value: val);
   }
+}
 
-  String asString() {
-    switch (this) {
-      case TokType.pipe:
-        return '|';
-      case TokType.space:
-        return ' ';
-      case TokType.l_parenth:
-        return '(';
-      case TokType.r_parenth:
-        return ')';
-      case TokType.l_bracket:
-        return '[';
-      case TokType.r_bracket:
-        return ']';
-      default:
-        return 'other';
-    }
+/// Converts char to TokType
+TokType matchTokType(String ch) {
+  switch (ch) {
+    case '|':
+      return TokType.pipe;
+    case '(':
+      return TokType.l_parenth;
+    case ')':
+      return TokType.r_parenth;
+    case '[':
+      return TokType.l_bracket;
+    case ']':
+      return TokType.r_bracket;
+    case ' ':
+      return TokType.space;
+    default:
+      return TokType.none;
   }
 }
 
 class Tok {
   const Tok(this.type, {this.symbol, this.value});
+
   final TokType type;
   final String? symbol;
   final int? value;
 
-  TokType get getType {
-    return type;
-  }
-
-  String get getName {
-    return symbol!;
-  }
-
-  int get getNumber {
-    return value!;
-  }
+  TokType get getType => type;
+  String get getName => symbol!;
+  int get getNumber => value!;
 
   @override
-  String toString() {
-    return type.name;
-  }
+  String toString() => type.name;
 }
 
 class Node {
-  Node(this.nameHash, this.connections, [this.pos]);
+  Node(String name, this.connections, [this.pos]) 
+    : nameHash = name.hashCode;
 
-  List<Node> connections = List.empty(growable: true);
-  final int nameHash;
+  List<Node> connections = [];
   final List<int>? pos;
-
-  int get hash {
-    return nameHash;
-  }
+  final int nameHash;
 
   void addConnection(Node other) {
+    if (connections.contains(other)) {
+      return;
+    }
+
     connections.add(other);
   }
 
   @override
-  String toString() {
-    return "$nameHash, $pos, connections: $connections";
+  bool operator ==(Object other) {
+    return hashCode == other.hashCode;
   }
-}
+  
+  @override
+  int get hashCode => nameHash;
 
-enum PatCount {
-  variable,
-  one;
+  @override
+  String toString() => "$nameHash, $pos, connections: $connections";
 }
 
 int validateToks(List<Tok> toks) {
@@ -130,20 +130,51 @@ int validateToks(List<Tok> toks) {
     }
   }
 
+  int bracketDepth = 0;
+  for (int i = pipeIndex; i < toks.length; i++) {
+    switch (toks[i].getType) {
+      case TokType.l_bracket:
+        bracketDepth++;
+        break;
+
+      case TokType.r_bracket:
+        bracketDepth--;
+        break;
+
+      case TokType.symbol:
+      case TokType.pipe:
+        break;
+
+      default:
+        throw Exception("found ${toks[i]} in graph declaration!");
+    }
+
+    if (bracketDepth < 0) {
+      throw Exception("too many ending brackets!");
+    }
+    if (bracketDepth > 1) {
+      throw Exception("too many opening brackets!");
+    }
+  }
+
+  if (bracketDepth != 0) {
+    throw Exception("unbalanced brackets!");
+  }
+
   return pipeIndex;
 }
 
 List<Node>? parseToks(List<Tok> toks) {
   List<Node> nodes = [];
   List<int> pos = [];
-  int? nodeHash;
+  String? nodeHash;
 
-  int pipeIndex = validateToks(toks);
+  final int pipeIndex = validateToks(toks);
 
   for (int i = 0; i < pipeIndex; i++) {
     switch (toks[i].getType) {
       case TokType.symbol:
-        nodeHash = toks[i].getName.hashCode;
+        nodeHash = toks[i].getName;
         break;
 
       case TokType.number:
@@ -162,24 +193,48 @@ List<Node>? parseToks(List<Tok> toks) {
     }
   }
 
-  Node? node;
+  List<Node> head = [];
+  bool inBrackets = false;
+
   for (int i = pipeIndex; i < toks.length; i++) {
     switch (toks[i].getType) {
-      case TokType.pipe: 
-        node = null;
+      case TokType.pipe:
+        head = [];
+        break;
+
+      case TokType.l_bracket:
+        inBrackets = true;
+        break;
+
+      case TokType.r_bracket:
+        inBrackets = false;
         break;
 
       case TokType.symbol:
-        print("here");
-        int nodeIndex = nodes.indexWhere((node) => node.nameHash == toks[i].getName.hashCode);
+        // find index of parsed node
+        int nodeIndex = nodes.indexWhere((node) {
+          return node.hashCode == toks[i].getName.hashCode;
+        });
+
+        // create node if it doesn't exist
+        if (nodeIndex == -1) {
+          Node newNode = Node(toks[i].getName, []);
+          nodes.add(newNode);
+        }
+
         Node newNode = nodes[nodeIndex];
 
-        if (node == null) {
-          node = newNode;
-        }
+        if (head.isEmpty) {
+          head.add(newNode);
+        } 
         else {
-          node.addConnection(newNode);
-          newNode.addConnection(node);
+          head.last.addConnection(newNode);
+          newNode.addConnection(head.last);
+
+          // update head value if out of brackets
+          if (!inBrackets) {
+            head.last = newNode;
+          }
         }
 
         break;
@@ -188,28 +243,7 @@ List<Node>? parseToks(List<Tok> toks) {
     }
   }
 
-  print(nodes);
-
   return nodes;
-}
-
-TokType matchTokType(String ch) {
-  switch (ch) {
-    case '|':
-      return TokType.pipe;
-    case '(':
-      return TokType.l_parenth;
-    case ')':
-      return TokType.r_parenth;
-    case '[':
-      return TokType.l_bracket;
-    case ']':
-      return TokType.r_bracket;
-    case ' ':
-      return TokType.space;
-    default:
-      return TokType.none;
-  }
 }
 
 List<Tok> extractToks(String str) {
@@ -225,10 +259,10 @@ List<Tok> extractToks(String str) {
 
     if (type == TokType.none) {
       lex += str[i];
-    } else {
+    } 
+    else {
       if (lex.isNotEmpty) {
         int? pos = int.tryParse(lex);
-
         if (pos == null) {
           toks.add(TokType.symbol.into(sym: lex));
         } else {
