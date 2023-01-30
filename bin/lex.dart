@@ -1,3 +1,5 @@
+import 'dart:io';
+
 /// List of escaper characters
 const List<String> escape = ['\n', '\t', '\r'];
 
@@ -79,6 +81,30 @@ class Node {
   
   @override
   String toString() => name;
+}
+
+/// Represents tree of nodes
+class Tree {
+  Tree(this.nodes);
+
+  static Tree fromString(String str) {
+    List<Tok> toks = extractToks(str);
+    return Tree(parseToks(toks));
+  }
+
+  static Future<Tree> fromFile(String path) async {
+    String str = await File(path).readAsString();
+    List<Tok> toks = extractToks(str);
+    return Tree(parseToks(toks));
+  }
+
+  List<Node> nodes;
+
+  List<Node> get getNodes => nodes;
+
+  List<Node> computeOptimalPath(String beg, String end) {
+    throw UnimplementedError();
+  }
 }
 
 int validateToks(List<Tok> toks) {
