@@ -1,237 +1,182 @@
-import 'dart:io';
 
-// /// List of escaper characters
-const List<String> escapers = [' ', '\n', '\t', '\r'];
-const List<String> delimeters = ['[', ']', '(', ')'];
+const List<String> escapes    = [' ', '\n', '\t', '\r'];
+const List<String> delimeters = [',', '+', '-', '<-', '->', '[', ']'];
 
-// /// Represents possible [Tok] states
-enum TokType {
-  pipe,
-  space,
-  symbol,
-  number,
-  lParenth,
-  rParenth,
-  lBracket,
-  rBracket,
-  none
+enum Tok {
+  sym,
+  num,
+  join,
+  comma,
+  doubleArrow,
+  leftArrow,
+  rightArrow,
+  openBrckt,
+  closeBrckt,
 }
 
-/// Represents a node connection
+class Tree {
+  Tree(Map<String, Node> nodes);
+}
+
 class Node {
-  Node(this.name, this.connections, this.pos) 
-    : nameHash = name.hashCode;
+  // global node id indexer
+  static int index = 0;
 
-  List<Node> connections = [];
-  final String   name;
-  final List<int> pos;
-  final int  nameHash;
+  int id;
+  String name;
+  List<Node> nodes;
+  List<double> position;
 
-  void addConnection(Node other) {
-    if (!connections.contains(other)) {
-      connections.add(other);
-    }
+  Node(this.name) : 
+    nodes = [], 
+    position = [], 
+    id = index++;
+
+  void addPosition(double coord) {
+    position.add(coord);
+  }
+
+  void addNode(Node node) {
+    if (!nodes.contains(node)) nodes.add(node);
   }
 
   @override
-  bool operator ==(Object other) => hashCode == other.hashCode;
-
-  @override
-  int get hashCode => nameHash;
-  
-  @override
-  String toString() => name;
+  String toString() {
+    return name;
+  }
 }
 
-// /// Represents tree of nodes
-// class Tree {
-//   Tree(this.nodes);
-
-//   static Tree fromString(String str) {
-//     List<Tok> toks = extractToks(str);
-//     return Tree(parseToks(toks));
-//   }
-
-//   static Future<Tree> fromFile(String path) async {
-//     String str = await File(path).readAsString();
-//     List<Tok> toks = extractToks(str);
-//     return Tree(parseToks(toks));
-//   }
-
-//   List<Node> nodes;
-
-//   List<Node> get getNodes => nodes;
-
-//   List<Node> computeOptimalPath(String beg, String end) {
-//     throw UnimplementedError();
-//   }
-// }
-
-// int validateToks(List<Tok> toks) {
-//   // pattern A(x, y, z)
-//   const List<TokType> pats = [
-//     TokType.symbol,
-//     TokType.lParenth,
-//     TokType.number,
-//     TokType.rParenth
-//   ];
-
-//   int pipeIndex = toks.indexWhere((tok) => tok.getType == TokType.pipe);
-//   if (pipeIndex == -1) {
-//     pipeIndex = toks.length;
-//   }
-
-//   int patIndex = 0;
-
-//   for (int i = 0; i < pipeIndex; i++) {
-//     if (pats[patIndex] == TokType.number && toks[i].getType == TokType.rParenth) {
-//       patIndex++;
-//     }
-//     if (toks[i].getType != pats[patIndex]) {
-//       throw Exception("expected ${pats[patIndex]}, found ${toks[i].getType}");
-//     }
-//     if (pats[patIndex] != TokType.number) {
-//       patIndex = (patIndex + 1) % pats.length;
-//     }
-//   }
-
-//   int bracketDepth = 0;
-//   for (int i = pipeIndex; i < toks.length; i++) {
-//     switch (toks[i].getType) {
-//       case TokType.lBracket: 
-//         bracketDepth++;
-//         break;
-      
-//       case TokType.rBracket: 
-//         bracketDepth--;
-//         break;
-      
-//       case TokType.symbol:
-//       case TokType.pipe: break;
-      
-//       default: 
-//         throw Exception("found ${toks[i]} in graph declaration!");   
-//     }
-
-//     if (bracketDepth < 0) {
-//       throw Exception("too many ending brackets!");
-//     }
-//     if (bracketDepth > 1) {
-//       throw Exception("too many opening brackets!");
-//     }
-//   }
-
-//   if (bracketDepth != 0) {
-//     throw Exception("unbalanced brackets!");
-//   }
-
-//   return pipeIndex;
-// }
-
-List<Node> parseToks(String str) {
-  List<String> toks = splitToks(str);
-  List<Node> nodes = [];
-
-  int nodeBeg = 0;
-  int nodeEnd = 0;
-  while (true) {
-    if (toks[nodeBeg] == '|') {
-      nodeEnd = nodeBeg;
-      break;
-    }
-
-    List<int> pos = [];
-
-    for (int i = nodeBeg + 2;; i++) {
-      int? res = int.tryParse(toks[i]);
-
-      if (res == null) {
-        nodeEnd = i + 1;
-        break;
-      }
-
-      pos.add(res);
-    }
-
-    nodes.add(Node(toks[nodeBeg], [], pos));
-    nodeBeg = nodeEnd;
-    break;
+Tok tokType(String source) {
+  switch (source) {
+    case '+': return Tok.join;
+    case '[': return Tok.openBrckt;
+    case ']': return Tok.closeBrckt;
+    case ',': return Tok.comma;
+    case '-': return Tok.doubleArrow;
+    case '->': return Tok.rightArrow;
+    case '<-': return Tok.leftArrow;
+    default:
+      if (isNumeric(source)) return Tok.num;
+      return Tok.sym;
   }
+}
 
-  Node? head;
-  bool inBrackets = false;
+bool isNumeric(String source) {
+  return double.tryParse(source) != null;
+}
 
-  for (int i = nodeEnd; i < toks.length; i++) {
-    switch (toks[i]) {
-      case '|': {
-        head = null;
+Map<String, Node> parseToks(List<String> toks) {
+  Map<String, Node> nodes = {};
+  List<String> head = [''];
+  int brcktDepth = 0;
+  Tok connection = Tok.doubleArrow;
+
+  for (int i = 0; i < toks.length; i++) {
+    Tok type = tokType(toks[i]);
+    switch (type) {
+      case Tok.join:
+        head = [''];
         break;
-      }
 
-      case '[': {
-        inBrackets = true;
+      case Tok.comma:
+        assert(brcktDepth > 0);
+        head.last = '';
         break;
-      }
 
-      case ']': {
-        inBrackets = false;
+      case Tok.openBrckt:
+        brcktDepth++;
+        head.add('');
         break;
-      }
 
-      default: {
-        int nodeIndex = nodes.indexWhere((node) => node.name == toks[i]);
+      case Tok.closeBrckt:
+        assert(brcktDepth > -1);
+        brcktDepth--;
+        head.removeLast();
+        break;
 
-        // create node if it doesn't exist
-        if (nodeIndex == -1) {
-          nodes.add(Node(toks[i], [], []));
-          nodeIndex = nodes.length - 1;
+      case Tok.sym:
+        nodes.putIfAbsent(toks[i], () => Node(toks[i]));
+        Node  rhs = nodes[toks[i]]!;
+        Node? lhs;
+
+        if (head.last.isEmpty && brcktDepth > 0) {
+          lhs = nodes[head[head.length - 2]];
+        } else if (head.isNotEmpty) {
+          lhs = nodes[head.last];
         }
 
-        Node newNode = nodes[nodeIndex];
+        if (lhs != null) {
+          switch (connection) {
+            case Tok.doubleArrow:
+              lhs.addNode(rhs);
+              rhs.addNode(lhs);
+              break;
 
-        if (head == null) {
-          head = newNode;
-        } else {
-          head.addConnection(newNode);
-          newNode.addConnection(head);
-          // update head value if out of brackets
-          if (!inBrackets) {
-            head = newNode;
+            case Tok.leftArrow:
+              rhs.addNode(lhs);
+              break;
+
+            case Tok.rightArrow:
+              lhs.addNode(rhs);
+              break;
+
+            default: throw Exception('unreachable!');
           }
         }
-      }
+
+        head.last = toks[i];
+        connection = Tok.doubleArrow;
+        break;
+
+      case Tok.leftArrow:
+      case Tok.rightArrow:
+      case Tok.doubleArrow: 
+        assert(tokType(toks[i + 1]) == Tok.sym);
+        connection = type;
+        break;
+
+      default: break;
     }
   }
 
   return nodes;
 }
 
-List<String> splitToks(String str) {
-  List<String> toks = [];
+List<String> parseSyms(String source) {
+  List<String> syms = []; 
+  String lex = "";
 
-  int subBeg = 0;
-  int subEnd = 0;
-  for (int i = 0; i < str.length; i++) {
-    bool isDelimeter = delimeters.contains(str[i]);
-    bool isEscaper = escapers.contains(str[i]);
-    subEnd = i;
-
-    if (subBeg != subEnd && (isEscaper || isDelimeter)) {
-      toks.add(str.substring(subBeg, i));
-      subBeg = i + 1;
+  for (int i = 0; i < source.length; i++) {
+    String delimeter = '';
+    for (String elem in delimeters) {
+      if (elem.length < delimeter.length || i + elem.length >= source.length) continue;
+      if (elem == source.substring(i, i + elem.length)) delimeter = elem;
     }
 
-    if (isEscaper) {
-      subBeg = i + 1;
-    } else if (isDelimeter) {
-      toks.add(str[i]);
-      subBeg = i + 1;
-    } 
+    if (escapes.contains(source[i]) || delimeter.isNotEmpty) {
+      if (lex.isNotEmpty) syms.add(lex);
+      if (delimeter.isNotEmpty) {
+        syms.add(delimeter);
+        i += delimeter.length - 1;
+      }
+
+      lex = "";
+      continue;
+    }
+
+    lex += source[i];
   }
 
-  if (subBeg <= subEnd) {
-    toks.add(str.substring(subBeg, subEnd+1));
-  }
+  if (lex.isNotEmpty) syms.add(lex);
 
-  return toks;
+  return syms;
+}
+
+void tree(String source) {
+  List<String> syms = parseSyms(source);
+  Map<String, Node> nodes = parseToks(syms); 
+
+  for (Node n in nodes.values) {
+    print("node $n has connections ${n.nodes}");
+  }
 }

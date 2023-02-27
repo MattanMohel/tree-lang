@@ -1,9 +1,84 @@
-A(0 0)
-B(1 0)
-C(0 1)
-D(1 1)
-E(0 -1)
+| A at (0 0) : 
+| B 1 0
+| C 0 1 1
+| D 1 1
 
-| A [E] B C D A 
+| A B <-> C D A 
 | B [B111 B112 B113]
 | C [C114 C115 C116]
+
+| A B C [F] D [G] E 
+| G F H I F
+
+A - B - C - F - G, H - I, D - G, E
+
+
+A - B - C - F - (G H - I D) - (G E)
+
+
+A B C [F [G, H I], D] [G, E]
+
+--OR--
+
+A = 0, 0
+B = 0, 1
+
+A - B - C - [
+	D - E,
+	F [
+		H - I - F, 
+		G - D
+	]
+]
+
+A - B - C [
+	- D - E,
+	- F [
+		- H - I - F,
+		- G - D
+	]
+]
+
+A - B - C [
+	- F [H - I - F] 
+	- D [G - E]
+]
+
+A - B:2 - C:1 - [
+	F:4 - H:5 - I:4 - F:2 - G:7 - D:1
+] - E:0
+
+A - B - [
+	C, 
+	D,
+	E - F - [
+		G,
+		H,
+		I
+	]
+]
+
+E -> A - B - C - D
+     |___________|
+
+E -> A [
+	- B - C - D
+] - D
+
+A - B - C [
+	-> J, 
+	- D - E
+] - F [
+	- H - I - F
+] - G - D 
+
+A - B - C [
+	-> J,
+	- D - E,
+	- F [
+		- H - I - F,
+		- G - D
+	]
+]
+
+A B C [J, D E] + F [H I F, G D]
