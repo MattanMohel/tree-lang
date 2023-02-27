@@ -1,6 +1,20 @@
 
+import 'dart:math';
+
 const List<String> escapes    = [' ', '\n', '\t', '\r'];
 const List<String> delimeters = [',', '+', '-', '<-', '->', '[', ']'];
+
+const Map<String, Tok> d = {
+  ',': Tok.comma,
+  '+': Tok.join,
+  '-': Tok.doubleArrow,
+  '<-': Tok.leftArrow,
+  '->': Tok.rightArrow,
+  '[': Tok.openBrckt,
+  ']': Tok.closeBrckt,
+  '(': Tok.openPrnth,
+  ')': Tok.closePrnth
+};
 
 enum Tok {
   sym,
@@ -12,6 +26,8 @@ enum Tok {
   rightArrow,
   openBrckt,
   closeBrckt,
+  openPrnth,
+  closePrnth,
 }
 
 class Tree {
@@ -19,30 +35,24 @@ class Tree {
 }
 
 class Node {
-  // global node id indexer
-  static int index = 0;
-
-  int id;
-  String name;
   List<Node> nodes;
-  List<double> position;
+  double x = -1;
+  double y = -1;
+  List<double> distances;
 
-  Node(this.name) : 
-    nodes = [], 
-    position = [], 
-    id = index++;
-
-  void addPosition(double coord) {
-    position.add(coord);
-  }
+  Node() : 
+    nodes     = [], 
+    distances = [];
 
   void addNode(Node node) {
     if (!nodes.contains(node)) nodes.add(node);
   }
 
-  @override
-  String toString() {
-    return name;
+  void updateDistances() {
+    for (Node node in nodes) {
+      double dist = sqrt(pow(node.x + x, 2) + pow(node.y + y, 2));
+      distances.add(dist);
+    }
   }
 }
 
@@ -51,6 +61,8 @@ Tok tokType(String source) {
     case '+': return Tok.join;
     case '[': return Tok.openBrckt;
     case ']': return Tok.closeBrckt;
+    case '(': return Tok.openPrnth;
+    case ')': return Tok.closePrnth;
     case ',': return Tok.comma;
     case '-': return Tok.doubleArrow;
     case '->': return Tok.rightArrow;
@@ -68,6 +80,8 @@ bool isNumeric(String source) {
 Map<String, Node> parseToks(List<String> toks) {
   Map<String, Node> nodes = {};
   List<String> head = [''];
+  List<double> xy = [];
+  int prnthDepth = 0;
   int brcktDepth = 0;
   Tok connection = Tok.doubleArrow;
 
@@ -92,6 +106,26 @@ Map<String, Node> parseToks(List<String> toks) {
         assert(brcktDepth > -1);
         brcktDepth--;
         head.removeLast();
+        break;
+
+      case Tok.openPrnth:
+        assert(head.last.isNotEmpty);
+        assert(prnthDepth == 0);
+        xy.clear();
+        prnthDepth++;
+        break;
+
+      case Tok.num:
+        assert(prnthDepth == 1);
+        xy.add(double.parse(toks[i]));
+        break;
+
+      case Tok.closePrnth:
+        assert(xy.length == 2);
+        assert(prnthDepth == 1);
+        nodes[head.last]!.x = xy[0];
+        nodes[head.last]!.y = xy[1];
+        head.last = '';
         break;
 
       case Tok.sym:
