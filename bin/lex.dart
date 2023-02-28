@@ -1,20 +1,10 @@
 
+import 'dart:async';
+import 'dart:io';
 import 'dart:math';
 
 const List<String> escapes    = [' ', '\n', '\t', '\r'];
-const List<String> delimeters = [',', '+', '-', '<-', '->', '[', ']'];
-
-const Map<String, Tok> d = {
-  ',': Tok.comma,
-  '+': Tok.join,
-  '-': Tok.doubleArrow,
-  '<-': Tok.leftArrow,
-  '->': Tok.rightArrow,
-  '[': Tok.openBrckt,
-  ']': Tok.closeBrckt,
-  '(': Tok.openPrnth,
-  ')': Tok.closePrnth
-};
+const List<String> delimeters = [',', '+', '-', '<-', '->', '[', ']', '(', ')'];
 
 enum Tok {
   sym,
@@ -31,28 +21,61 @@ enum Tok {
 }
 
 class Tree {
-  Tree(Map<String, Node> nodes);
+  late Map<String, Node> nodes;
+
+  Tree(this.nodes);
+  static Tree fromString(String source) {
+    return tree(source);
+  }
+  static Future<Tree> fromFile(String path) async {
+    String source = await File(path).readAsString();
+    return fromString(source);
+  }
+
+  List<Node> shortestPath(String beg, String end) {
+    return [];
+  }
+
+  Node? getNode(String name) {
+    return nodes[name];
+  }
+
+  @override 
+  String toString() {
+    String buf = '';
+
+    for (Node node in nodes.values) {
+      buf += 'node $node has connections ';
+      for (Node connection in node.nodes) {
+        buf += '${connection.name}:${node.distance(connection)} ';
+      }
+      buf += '\n';
+    }
+
+    return buf;
+  }
 }
 
 class Node {
+  String name;
   List<Node> nodes;
-  double x = -1;
-  double y = -1;
-  List<double> distances;
+  double x = 0;
+  double y = 0;
 
-  Node() : 
-    nodes     = [], 
-    distances = [];
+  Node(this.name) : 
+    nodes     = [];
 
   void addNode(Node node) {
     if (!nodes.contains(node)) nodes.add(node);
   }
 
-  void updateDistances() {
-    for (Node node in nodes) {
-      double dist = sqrt(pow(node.x + x, 2) + pow(node.y + y, 2));
-      distances.add(dist);
-    }
+  double distance(Node rhs) {
+    return sqrt(pow(x - rhs.x, 2) + pow(y - rhs.y, 2));
+  }
+
+  @override
+  String toString() {
+    return name;
   }
 }
 
@@ -111,21 +134,22 @@ Map<String, Node> parseToks(List<String> toks) {
       case Tok.openPrnth:
         assert(head.last.isNotEmpty);
         assert(prnthDepth == 0);
-        xy.clear();
         prnthDepth++;
-        break;
-
-      case Tok.num:
-        assert(prnthDepth == 1);
-        xy.add(double.parse(toks[i]));
+        xy.clear();
         break;
 
       case Tok.closePrnth:
         assert(xy.length == 2);
         assert(prnthDepth == 1);
+        prnthDepth--;
         nodes[head.last]!.x = xy[0];
         nodes[head.last]!.y = xy[1];
         head.last = '';
+        break;
+
+      case Tok.num:
+        assert(prnthDepth == 1);
+        xy.add(double.parse(toks[i]));
         break;
 
       case Tok.sym:
@@ -176,7 +200,7 @@ Map<String, Node> parseToks(List<String> toks) {
   return nodes;
 }
 
-List<String> parseSyms(String source) {
+List<String> extractToks(String source) {
   List<String> syms = []; 
   String lex = "";
 
@@ -206,11 +230,8 @@ List<String> parseSyms(String source) {
   return syms;
 }
 
-void tree(String source) {
-  List<String> syms = parseSyms(source);
+Tree tree(String source) {
+  List<String> syms = extractToks(source);
   Map<String, Node> nodes = parseToks(syms); 
-
-  for (Node n in nodes.values) {
-    print("node $n has connections ${n.nodes}");
-  }
+  return Tree(nodes);
 }
