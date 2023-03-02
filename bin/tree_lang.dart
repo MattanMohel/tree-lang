@@ -6,8 +6,8 @@ const dataPath = "res/test.tr";
 void main() async {
   Tree tree = Tree.fromString(
   '''
-    A B C E D [-> A, B]
+    A -> B:5 C:10
   ''');
 
-  print(tree.shortestPath('A', 'E').reversed);
+  print(tree.shortestPath('A', 'C'));
 }

@@ -4,60 +4,39 @@ import 'dart:io';
 import 'dart:math';
 
 const List<String> escapes    = [' ', '\n', '\t', '\r'];
-const List<String> delimeters = [',', '+', '-', '<-', '->', '[', ']', '(', ')'];
+const List<String> delimeters = [',', '+', '-', '--', '<-', '->', '[', ']', ':'];
 
 enum Tok {
   sym,
   num,
   join,
   comma,
-  doubleArrow,
+  arrow,
   leftArrow,
   rightArrow,
   openBrckt,
   closeBrckt,
-  openPrnth,
-  closePrnth,
+  colon
+}
+
+class Edge {
+  String end;
+  double weight;
+  Edge(this.end, this.weight);
 }
 
 class Vertex {
-  final String name;
-  bool init = false;
+  Set<Edge> edges;
+  Vertex() : edges = {};
 
-  double x;
-  double y;
-  List<Vertex> points;
-
-  Vertex(this.name) : x = 0, y = 0, points = [];
-
-  void addPoint(Vertex point) {
-    if (!points.contains(point)) {
-      points.add(point);
-    }
-  }
-
-  void setXY(double x, double y) {
-    this.x = x;
-    this.y = y;
-    init = true;
-  }
-
-  double magnitude() {
-    return sqrt(pow(x, 2) + pow(y, 2));
-  }
-
-  double distance(Vertex other) {
-    if (!init || !other.init) {
-      return 1;
-    }
-
-    return sqrt(pow(other.x - x, 2) + pow(other.y - y, 2));
+  void addEdge(String name, double weight) {
+    assert(edges.every((edge) => edge.end != name));
+    edges.add(Edge(name, weight));
   }
 }
 
 class Tree {
-  late Map<String, Vertex> vertices;
-
+  Map<String, Vertex> vertices;
   Tree(this.vertices);
 
   static Tree fromString(String source) {
@@ -70,7 +49,7 @@ class Tree {
   }
 
   List<String> shortestPath(String beg, String end) {
-    List<String> unvisited = vertices.keys.toList();
+    Set<String> unvisited = vertices.keys.toSet();
     Map<String, String> previous = vertices.map((key, _) => MapEntry(key, ''));
     Map<String, double> distances = vertices.map((key, _) => MapEntry(key, double.infinity));
     distances[beg] = 0;
@@ -85,21 +64,22 @@ class Tree {
       
       Vertex vertex = vertices[key]!;
 
-      for (Vertex point in vertex.points) {
-        double distance = vertex.distance(point) + distances[key]!;
-        if (distance < distances[point.name]!) {
-          distances[point.name] = distance;
-          previous[point.name] = key;
+      for (Edge edge in vertex.edges) {
+        if (edge.weight + distances[key]! < distances[edge.end]!) {
+          distances[edge.end] = edge.weight + distances[key]!;
+          previous[edge.end] = key;
         }
       }      
     }
 
     List<String> path = [end];
+    print("traveled ${distances[end]}");
     while (path.last != beg) {
       path.add(previous[path.last]!);
     }
 
-    return path;
+
+    return path.reversed.toList();
   }
 }
 
@@ -108,10 +88,9 @@ Tok tokType(String source) {
     case '+': return Tok.join;
     case '[': return Tok.openBrckt;
     case ']': return Tok.closeBrckt;
-    case '(': return Tok.openPrnth;
-    case ')': return Tok.closePrnth;
+    case ':': return Tok.colon;
     case ',': return Tok.comma;
-    case '-': return Tok.doubleArrow;
+    case '--': return Tok.arrow;
     case '->': return Tok.rightArrow;
     case '<-': return Tok.leftArrow;
     default:
@@ -126,11 +105,9 @@ bool isNumeric(String source) {
 
 Map<String, Vertex> parseToks(List<String> toks) {
   Map<String, Vertex> vertices = {};
+  Tok edgeType = Tok.arrow;
   List<String> head = [''];
-  List<double> pose = [];
-  int prnthDepth = 0;
   int brcktDepth = 0;
-  Tok connection = Tok.doubleArrow;
 
   for (int i = 0; i < toks.length; i++) {
     switch (tokType(toks[i])) {
@@ -154,50 +131,35 @@ Map<String, Vertex> parseToks(List<String> toks) {
         head.removeLast();
         break;
 
-      case Tok.openPrnth:
-        assert(head.last.isNotEmpty);
-        assert(prnthDepth == 0);
-        prnthDepth++;
-        pose.clear();
-        break;
-
-      case Tok.closePrnth:
-        assert(pose.length == 2);
-        assert(prnthDepth == 1);
-        prnthDepth--;
-        vertices[head.last]!.setXY(pose[0], pose[1]);
-        head.last = '';
-        break;
-
-      case Tok.num:
-        assert(prnthDepth == 1);
-        pose.add(double.parse(toks[i]));
-        break;
-
       case Tok.sym:
-        vertices.putIfAbsent(toks[i], () => Vertex(toks[i]));
-        Vertex  rhs = vertices[toks[i]]!;
-        Vertex? lhs;
+        vertices.putIfAbsent(toks[i], () => Vertex());
+        String lhs = '';
 
         if (head.last.isEmpty && brcktDepth > 0) {
-          lhs = vertices[head[head.length - 2]];
+          lhs = head[head.length - 2];
         } else if (head.isNotEmpty) {
-          lhs = vertices[head.last];
+          lhs = head.last;
         }
 
-        if (lhs != null) {
-          switch (connection) {
-            case Tok.doubleArrow:
-              lhs.addPoint(rhs);
-              rhs.addPoint(lhs);
+        double weight = 1;
+        if (toks.length > i + 1 && tokType(toks[i+1]) == Tok.colon) {
+          assert(tokType(toks[i+2]) == Tok.num);
+          weight = double.parse(toks[i+2]);
+        }
+
+        if (lhs.isNotEmpty) {
+          switch (edgeType) {
+            case Tok.arrow:
+              vertices[lhs]!.addEdge(toks[i], weight);
+              vertices[toks[i]]!.addEdge(lhs, weight);
               break;
 
             case Tok.leftArrow:
-              rhs.addPoint(lhs);
+              vertices[toks[i]]!.addEdge(lhs, weight);
               break;
 
             case Tok.rightArrow:
-              lhs.addPoint(rhs);
+              vertices[lhs]!.addEdge(toks[i], weight);
               break;
 
             default: throw Exception('unreachable!');
@@ -205,13 +167,22 @@ Map<String, Vertex> parseToks(List<String> toks) {
         }
 
         head.last = toks[i];
-        connection = Tok.doubleArrow;
+        edgeType = Tok.arrow;
         break;
 
-      // arrow types: '-' or '->' or '<-'
-      default: 
+      case Tok.colon:
+        assert(tokType(toks[i+1]) == Tok.num);
+        break;
+
+      case Tok.num:
+        assert(tokType(toks[i-1]) == Tok.colon);
+        break;
+
+      case Tok.arrow: 
+      case Tok.leftArrow: 
+      case Tok.rightArrow: 
         assert(tokType(toks[i + 1]) == Tok.sym);
-        connection = tokType(toks[i]);
+        edgeType = tokType(toks[i]);
     }
   }
 
