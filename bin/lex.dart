@@ -20,62 +20,86 @@ enum Tok {
   closePrnth,
 }
 
-class Tree {
-  late Map<String, Node> nodes;
+class Vertex {
+  final String name;
+  bool init = false;
 
-  Tree(this.nodes);
+  double x;
+  double y;
+  List<Vertex> points;
+
+  Vertex(this.name) : x = 0, y = 0, points = [];
+
+  void addPoint(Vertex point) {
+    if (!points.contains(point)) {
+      points.add(point);
+    }
+  }
+
+  void setXY(double x, double y) {
+    this.x = x;
+    this.y = y;
+    init = true;
+  }
+
+  double magnitude() {
+    return sqrt(pow(x, 2) + pow(y, 2));
+  }
+
+  double distance(Vertex other) {
+    if (!init || !other.init) {
+      return 1;
+    }
+
+    return sqrt(pow(other.x - x, 2) + pow(other.y - y, 2));
+  }
+}
+
+class Tree {
+  late Map<String, Vertex> vertices;
+
+  Tree(this.vertices);
+
   static Tree fromString(String source) {
     return tree(source);
   }
+
   static Future<Tree> fromFile(String path) async {
     String source = await File(path).readAsString();
     return fromString(source);
   }
 
-  List<Node> shortestPath(String beg, String end) {
-    return [];
-  }
+  List<String> shortestPath(String beg, String end) {
+    List<String> unvisited = vertices.keys.toList();
+    Map<String, String> previous = vertices.map((key, _) => MapEntry(key, ''));
+    Map<String, double> distances = vertices.map((key, _) => MapEntry(key, double.infinity));
+    distances[beg] = 0;
 
-  Node? getNode(String name) {
-    return nodes[name];
-  }
+    while (unvisited.isNotEmpty) {
+      String key = unvisited.reduce((lhs, rhs) => distances[lhs]! < distances[rhs]!? lhs : rhs);
+      unvisited.remove(key);
 
-  @override 
-  String toString() {
-    String buf = '';
-
-    for (Node node in nodes.values) {
-      buf += 'node $node has connections ';
-      for (Node connection in node.nodes) {
-        buf += '${connection.name}:${node.distance(connection)} ';
+      if (distances[key] == double.infinity) {
+        break;
       }
-      buf += '\n';
+      
+      Vertex vertex = vertices[key]!;
+
+      for (Vertex point in vertex.points) {
+        double distance = vertex.distance(point) + distances[key]!;
+        if (distance < distances[point.name]!) {
+          distances[point.name] = distance;
+          previous[point.name] = key;
+        }
+      }      
     }
 
-    return buf;
-  }
-}
+    List<String> path = [end];
+    while (path.last != beg) {
+      path.add(previous[path.last]!);
+    }
 
-class Node {
-  String name;
-  List<Node> nodes;
-  double x = 0;
-  double y = 0;
-
-  Node(this.name) : 
-    nodes     = [];
-
-  void addNode(Node node) {
-    if (!nodes.contains(node)) nodes.add(node);
-  }
-
-  double distance(Node rhs) {
-    return sqrt(pow(x - rhs.x, 2) + pow(y - rhs.y, 2));
-  }
-
-  @override
-  String toString() {
-    return name;
+    return path;
   }
 }
 
@@ -100,17 +124,16 @@ bool isNumeric(String source) {
   return double.tryParse(source) != null;
 }
 
-Map<String, Node> parseToks(List<String> toks) {
-  Map<String, Node> nodes = {};
+Map<String, Vertex> parseToks(List<String> toks) {
+  Map<String, Vertex> vertices = {};
   List<String> head = [''];
-  List<double> xy = [];
+  List<double> pose = [];
   int prnthDepth = 0;
   int brcktDepth = 0;
   Tok connection = Tok.doubleArrow;
 
   for (int i = 0; i < toks.length; i++) {
-    Tok type = tokType(toks[i]);
-    switch (type) {
+    switch (tokType(toks[i])) {
       case Tok.join:
         head = [''];
         break;
@@ -135,47 +158,46 @@ Map<String, Node> parseToks(List<String> toks) {
         assert(head.last.isNotEmpty);
         assert(prnthDepth == 0);
         prnthDepth++;
-        xy.clear();
+        pose.clear();
         break;
 
       case Tok.closePrnth:
-        assert(xy.length == 2);
+        assert(pose.length == 2);
         assert(prnthDepth == 1);
         prnthDepth--;
-        nodes[head.last]!.x = xy[0];
-        nodes[head.last]!.y = xy[1];
+        vertices[head.last]!.setXY(pose[0], pose[1]);
         head.last = '';
         break;
 
       case Tok.num:
         assert(prnthDepth == 1);
-        xy.add(double.parse(toks[i]));
+        pose.add(double.parse(toks[i]));
         break;
 
       case Tok.sym:
-        nodes.putIfAbsent(toks[i], () => Node(toks[i]));
-        Node  rhs = nodes[toks[i]]!;
-        Node? lhs;
+        vertices.putIfAbsent(toks[i], () => Vertex(toks[i]));
+        Vertex  rhs = vertices[toks[i]]!;
+        Vertex? lhs;
 
         if (head.last.isEmpty && brcktDepth > 0) {
-          lhs = nodes[head[head.length - 2]];
+          lhs = vertices[head[head.length - 2]];
         } else if (head.isNotEmpty) {
-          lhs = nodes[head.last];
+          lhs = vertices[head.last];
         }
 
         if (lhs != null) {
           switch (connection) {
             case Tok.doubleArrow:
-              lhs.addNode(rhs);
-              rhs.addNode(lhs);
+              lhs.addPoint(rhs);
+              rhs.addPoint(lhs);
               break;
 
             case Tok.leftArrow:
-              rhs.addNode(lhs);
+              rhs.addPoint(lhs);
               break;
 
             case Tok.rightArrow:
-              lhs.addNode(rhs);
+              lhs.addPoint(rhs);
               break;
 
             default: throw Exception('unreachable!');
@@ -186,18 +208,14 @@ Map<String, Node> parseToks(List<String> toks) {
         connection = Tok.doubleArrow;
         break;
 
-      case Tok.leftArrow:
-      case Tok.rightArrow:
-      case Tok.doubleArrow: 
+      // arrow types: '-' or '->' or '<-'
+      default: 
         assert(tokType(toks[i + 1]) == Tok.sym);
-        connection = type;
-        break;
-
-      default: break;
+        connection = tokType(toks[i]);
     }
   }
 
-  return nodes;
+  return vertices;
 }
 
 List<String> extractToks(String source) {
@@ -208,16 +226,18 @@ List<String> extractToks(String source) {
     String delimeter = '';
     for (String elem in delimeters) {
       if (elem.length < delimeter.length || i + elem.length >= source.length) continue;
+      
       if (elem == source.substring(i, i + elem.length)) delimeter = elem;
     }
 
     if (escapes.contains(source[i]) || delimeter.isNotEmpty) {
       if (lex.isNotEmpty) syms.add(lex);
+
       if (delimeter.isNotEmpty) {
         syms.add(delimeter);
         i += delimeter.length - 1;
       }
-
+      
       lex = "";
       continue;
     }
@@ -232,6 +252,6 @@ List<String> extractToks(String source) {
 
 Tree tree(String source) {
   List<String> syms = extractToks(source);
-  Map<String, Node> nodes = parseToks(syms); 
+  Map<String, Vertex> nodes = parseToks(syms); 
   return Tree(nodes);
 }
